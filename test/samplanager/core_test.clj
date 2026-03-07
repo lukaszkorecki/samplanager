@@ -35,7 +35,12 @@
           {:keys [report duplicates]} (core/find-duplicates root)]
       (is (match? {:found-files-count 7
                    :duplicate-files-count 5
-                   :duplicate-groups-count 2}
+                   :duplicate-groups-count 2
+                   :total-size pos-int?
+                   :total-size-human string?
+                   :duplicate-size pos-int?
+                   :duplicate-size-human string?
+                   :dirs-by-duplicates #(pos? (count %))}
                   report))
       (is (= 2 (count duplicates)))
       (let [sizes (set (map count duplicates))]
@@ -49,7 +54,9 @@
       (let [{:keys [report duplicates]} (core/find-duplicates root)]
         (is (match? {:found-files-count 2
                      :duplicate-files-count 0
-                     :duplicate-groups-count 0}
+                     :duplicate-groups-count 0
+                     :total-size pos-int?
+                     :duplicate-size zero?}
                     report))
         (is (= [] duplicates)))
       (fs/delete-tree root))))

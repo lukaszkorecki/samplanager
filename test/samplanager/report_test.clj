@@ -45,15 +45,39 @@
                   (report/find-duplicates groups))))))
 
 (deftest build-report-test
-  (testing "produces counts-only map without file list"
-    (let [all-files ["a" "b" "c" "d" "e"]
-          dups [["a" "b"] ["c" "d" "e"]]
-          result (report/build-report all-files dups)]
-      (is (match? {:found-files-count 5
-                   :duplicate-files-count 5
-                   :duplicate-groups-count 2}
-                  result))
-      (is (not (contains? result :duplicates))))))
+  (testing "produces counts and stats from real files"
+    (let [root (str (fs/create-temp-dir {:prefix "report-test"}))
+          f1 (str root "/a.wav")
+          f2 (str root "/b.wav")
+          f3 (str root "/c.wav")
+          f4 (str root "/d.wav")
+          f5 (str root "/e.wav")]
+      (spit f1 "dup-content")
+      (spit f2 "dup-content")
+      (spit f3 "other-dup!")
+      (spit f4 "other-dup!")
+      (spit f5 "unique-stuff")
+      (let [result (report/build-report [f1 f2 f3 f4 f5]
+                                        [[f1 f2] [f3 f4]])]
+        (is (match? {:found-files-count 5
+                     :duplicate-files-count 4
+                     :duplicate-groups-count 2
+                     :total-size-human string?
+                     :duplicate-size-human string?}
+                    result))
+        (is (pos? (:total-size result)))
+        (is (pos? (:duplicate-size result)))
+        (is (seq (:dirs-by-duplicates result)))
+        (is (not (contains? result :duplicates))))
+      (fs/delete-tree root))))
+
+(deftest human-size-test
+  (testing "formats byte counts"
+    (is (= "0 B" (report/human-size 0)))
+    (is (= "512 B" (report/human-size 512)))
+    (is (= "1.5 KB" (report/human-size 1536)))
+    (is (= "10.0 MB" (report/human-size (* 10 1024 1024))))
+    (is (= "2.50 GB" (report/human-size (* 2.5 1024 1024 1024))))))
 
 (deftest ->json-test
   (testing "produces valid JSON with expected keys"

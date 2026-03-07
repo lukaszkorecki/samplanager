@@ -4,7 +4,7 @@
         cheshire/cheshire {:mvn/version "6.0.0"}
 
         ;; nicer TUI
-        io.github.yourname/charm.clj {:git/tag "v0.1.61" :git/sha "9702ff7e87974daaf18c3080b43b7809efed13c1"}}
+        io.github.TimoKramer/charm.clj {:git/tag "v0.1.61" :git/sha "9702ff7e87974daaf18c3080b43b7809efed13c1"}}
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}
                                nubank/matcher-combinators {:mvn/version "3.9.1"}}
