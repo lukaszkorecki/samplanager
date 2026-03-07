@@ -1,6 +1,7 @@
 (ns samplanager.core-test
   (:require [clojure.test :refer [deftest testing is]]
             [matcher-combinators.test :refer [match?]]
+            [cheshire.core :as json]
             [samplanager.core :as core]
             [babashka.fs :as fs]))
 
@@ -31,14 +32,13 @@
 (deftest find-duplicates-test
   (testing "end-to-end: detects duplicates across subdirectories"
     (let [root (create-sample-library!)
-          result (core/find-duplicates root)]
+          {:keys [report duplicates]} (core/find-duplicates root)]
       (is (match? {:found-files-count 7
-                   :duplicate-files-count 5}
-                  result))
-      ;; Two duplicate groups: kicks (2 files) and hats (3 files)
-      (is (= 2 (count (:duplicates result))))
-      (let [groups (:duplicates result)
-            sizes (set (map count groups))]
+                   :duplicate-files-count 5
+                   :duplicate-groups-count 2}
+                  report))
+      (is (= 2 (count duplicates)))
+      (let [sizes (set (map count duplicates))]
         (is (= #{2 3} sizes)))
       (fs/delete-tree root)))
 
@@ -46,9 +46,10 @@
     (let [root (str (fs/create-temp-dir {:prefix "no-dups-test"}))]
       (spit (str root "/kick.wav") "unique-kick")
       (spit (str root "/snare.wav") "unique-snare-data")
-      (let [result (core/find-duplicates root)]
+      (let [{:keys [report duplicates]} (core/find-duplicates root)]
         (is (match? {:found-files-count 2
                      :duplicate-files-count 0
-                     :duplicates []}
-                    result)))
+                     :duplicate-groups-count 0}
+                    report))
+        (is (= [] duplicates)))
       (fs/delete-tree root))))

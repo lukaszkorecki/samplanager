@@ -45,23 +45,22 @@
                   (report/find-duplicates groups))))))
 
 (deftest build-report-test
-  (testing "produces correct counts and structure"
+  (testing "produces counts-only map without file list"
     (let [all-files ["a" "b" "c" "d" "e"]
           dups [["a" "b"] ["c" "d" "e"]]
           result (report/build-report all-files dups)]
       (is (match? {:found-files-count 5
                    :duplicate-files-count 5
-                   :duplicates [["a" "b"] ["c" "d" "e"]]}
-                  result)))))
+                   :duplicate-groups-count 2}
+                  result))
+      (is (not (contains? result :duplicates))))))
 
-(deftest report->json-test
+(deftest ->json-test
   (testing "produces valid JSON with expected keys"
-    (let [report {:found-files-count 10
-                  :duplicate-files-count 4
-                  :duplicates [["a" "b"] ["c" "d"]]}
-          json-str (report/report->json report)
+    (let [data {:found-files-count 10
+                :duplicate-files-count 4}
+          json-str (report/->json data)
           parsed (json/parse-string json-str true)]
       (is (match? {:found-files-count 10
-                   :duplicate-files-count 4
-                   :duplicates [["a" "b"] ["c" "d"]]}
+                   :duplicate-files-count 4}
                   parsed)))))

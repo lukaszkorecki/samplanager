@@ -28,9 +28,9 @@
   (->> file-paths
        (pmap checksum-file)
        (reduce
-         (fn [acc [path hash]]
-           (update acc hash (fnil conj []) path))
-         {})))
+        (fn [acc [path hash]]
+          (update acc hash (fnil conj []) path))
+        {})))
 
 (defn find-duplicates
   "Returns groups of files that share the same checksum (2+ files per group).
@@ -42,13 +42,13 @@
        vec))
 
 (defn build-report
-  "Builds the final report map."
+  "Builds the final report map with counts only (no file list)."
   [all-files duplicate-groups]
   {:found-files-count (count all-files)
    :duplicate-files-count (reduce + 0 (map count duplicate-groups))
-   :duplicates duplicate-groups})
+   :duplicate-groups-count (count duplicate-groups)})
 
-(defn report->json
-  "Serializes report map to pretty-printed JSON."
-  [report]
-  (json/generate-string report {:pretty true}))
+(defn ->json
+  "Serializes a map to pretty-printed JSON."
+  [m]
+  (json/generate-string m {:pretty true}))
