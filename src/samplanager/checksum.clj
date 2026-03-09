@@ -2,6 +2,7 @@
   "Computes MD5 checksums for files using JDK MessageDigest.
    Reads files in chunks to handle large audio files without
    loading them entirely into memory."
+  (:require [mokujin.log :as log])
   (:import [java.security MessageDigest]
            [java.io FileInputStream]))
 
@@ -9,13 +10,20 @@
   "Computes the MD5 hex digest of the file at the given path.
    Reads in 8KB chunks for memory efficiency."
   [file-path]
-  (let [digest (MessageDigest/getInstance "MD5")
-        buffer (byte-array 8192)]
-    (with-open [fis (FileInputStream. (str file-path))]
-      (loop []
-        (let [n (.read fis buffer)]
-          (when (pos? n)
-            (.update digest buffer 0 n)
-            (recur)))))
-    (let [hash-bytes (.digest digest)]
-      (apply str (map #(format "%02x" %) hash-bytes)))))
+  (log/debug "checksumming" {:file (str file-path)})
+  (try
+    (let [digest (MessageDigest/getInstance "MD5")
+          buffer (byte-array 8192)]
+      (with-open [fis (FileInputStream. (str file-path))]
+        (loop []
+          (let [n (.read fis buffer)]
+            (when (pos? n)
+              (.update digest buffer 0 n)
+              (recur)))))
+      (let [hash-bytes (.digest digest)
+            hex (apply str (map #(format "%02x" %) hash-bytes))]
+        (log/debug "checksum done" {:file (str file-path) :md5 hex})
+        hex))
+    (catch Exception e
+      (log/error e "failed to checksum file" {:file (str file-path)})
+      (throw e))))

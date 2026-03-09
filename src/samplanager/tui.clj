@@ -1,8 +1,9 @@
 (ns samplanager.tui
   "Terminal UI for samplanager using charm.clj.
-   Shows progress during scan and a stats summary when done."
+   Uses a shared atom for scan progress — the view reads it on each
+   spinner tick, so no custom message passing is needed."
   (:require [charm.core :as charm]
-            [samplanager.report :as report]))
+            [mokujin.log :as log]))
 
 ;; -- Styles --
 
@@ -24,58 +25,81 @@
   (charm/style :fg charm/green
                :bold true))
 
-(def warn-style
-  (charm/style :fg charm/yellow
+(def error-style
+  (charm/style :fg charm/red
                :bold true))
 
-;; -- State transitions --
+;; -- Shared scan state (written by pipeline, read by view) --
 
-(defn init
-  "Initial TUI state."
+(def scan-state
+  "Atom holding scan progress. Updated by the pipeline future,
+   read by the charm view function on each render tick."
+  (atom {:phase :scanning
+         :scan-count 0
+         :checksum-count 0
+         :checksum-total 0
+         :report nil
+         :error nil}))
+
+;; -- Promise for coordinating shutdown --
+
+(def ^:private exit-promise (promise))
+
+;; -- Public state update API (called from core pipeline) --
+
+(defn update-scan-progress!
+  [n]
+  (swap! scan-state assoc :scan-count n))
+
+(defn scan-complete!
+  [{:keys [count candidates]}]
+  (log/info "tui: scan complete" {:count count :candidates candidates})
+  (swap! scan-state assoc
+         :phase :checksumming
+         :scan-count count
+         :checksum-total candidates))
+
+(defn update-checksum-progress!
+  [n]
+  (swap! scan-state assoc :checksum-count n))
+
+(defn done!
+  [report]
+  (log/info "tui: done")
+  (swap! scan-state assoc
+         :phase :done
+         :report report))
+
+(defn error!
+  [message]
+  (log/error "tui: error" {:message message})
+  (swap! scan-state assoc
+         :phase :error
+         :error message))
+
+;; -- Charm program (only handles spinner + quit) --
+
+(defn- init
   [{:keys [root-dir output-file]}]
   (let [[spinner spinner-cmd] (charm/spinner-init (charm/spinner :dots))]
-    [{:phase :scanning
-      :root-dir root-dir
+    [{:root-dir root-dir
       :output-file output-file
-      :spinner spinner
-      :scan-count 0
-      :checksum-count 0
-      :checksum-total 0
-      :report nil
-      :duplicates nil}
+      :spinner spinner}
      spinner-cmd]))
 
-(defn update-state
+(defn- update-state
   [state msg]
   (cond
-    ;; quit on q or ctrl+c
     (and (charm/key-press? msg)
          (or (charm/key-match? msg "q")
              (charm/key-match? msg "ctrl+c")))
-    [state charm/quit-cmd]
+    (do (log/info "user quit")
+        (deliver exit-promise :quit)
+        [state charm/quit-cmd])
 
-    ;; spinner tick
     (charm/spinning? (:spinner state) msg)
     (let [[spinner cmd] (charm/spinner-update (:spinner state) msg)]
       [(assoc state :spinner spinner) cmd])
-
-    ;; pipeline progress messages
-    (and (map? msg) (= (:type msg) :scan-complete))
-    [(assoc state
-            :phase :checksumming
-            :scan-count (:count msg)
-            :checksum-total (:candidates msg))
-     nil]
-
-    (and (map? msg) (= (:type msg) :checksum-progress))
-    [(assoc state :checksum-count (:count msg)) nil]
-
-    (and (map? msg) (= (:type msg) :done))
-    [(assoc state
-            :phase :done
-            :report (:report msg)
-            :duplicates (:duplicates msg))
-     nil]
 
     :else [state nil]))
 
@@ -86,39 +110,49 @@
   (str (charm/render label-style (str "  " label ": "))
        (charm/render value-style (str value))))
 
+(defn- progress-bar
+  [done total width]
+  (let [pct (if (pos? total) (/ (double done) total) 0.0)
+        filled (int (* width pct))
+        empty (- width filled)
+        pct-str (str (int (* 100 pct)) "%")]
+    (str (charm/render ok-style (apply str (repeat filled "█")))
+         (charm/render dim-style (apply str (repeat empty "░")))
+         " " (charm/render value-style pct-str)
+         (charm/render dim-style (str " (" done "/" total ")")))))
+
 (defn- view-scanning
-  [state]
+  [state scan]
   (str (charm/render title-style "samplanager")
        "\n\n"
        "  " (charm/spinner-view (:spinner state))
-       " Scanning " (charm/render value-style (:root-dir state)) " for audio files..."
-       (when (pos? (:scan-count state))
-         (str "\n" (stat-line "Files found" (:scan-count state))))))
+       " Scanning " (charm/render value-style (:root-dir state)) " for audio files...\n"
+       "\n"
+       (stat-line "Audio files found" (:scan-count scan))
+       "\n"))
 
 (defn- view-checksumming
-  [state]
-  (let [done (:checksum-count state)
-        total (:checksum-total state)
-        pct (if (pos? total) (int (* 100 (/ (double done) total))) 0)
-        bar-width 30
-        filled (int (* bar-width (/ (double done) (max total 1))))
-        empty (- bar-width filled)
-        bar (str (charm/render ok-style (apply str (repeat filled "█")))
-                 (charm/render dim-style (apply str (repeat empty "░"))))]
-    (str (charm/render title-style "samplanager")
-         "\n\n"
-         "  " (charm/spinner-view (:spinner state))
-         " Checksumming files...\n\n"
-         "  " bar " " (charm/render value-style (str pct "%"))
-         " (" done "/" total ")\n")))
+  [state scan]
+  (str (charm/render title-style "samplanager")
+       "\n\n"
+       "  " (charm/spinner-view (:spinner state))
+       " Checksumming candidates...\n"
+       "\n"
+       (stat-line "Audio files scanned" (:scan-count scan))
+       "\n"
+       "  " (progress-bar (:checksum-count scan)
+                          (:checksum-total scan)
+                          30)
+       "\n"))
 
 (defn- view-done
-  [state]
-  (let [{:keys [report]} state
+  [state scan]
+  (let [{:keys [report]} scan
         dirs (:dirs-by-duplicates report)
-        top-dirs (take 5 dirs)]
+        top-dirs (take 5 dirs)
+        savings (:duplicate-size-human report)]
     (str (charm/render title-style "samplanager") " "
-         (charm/render ok-style "✓ done")
+         (charm/render ok-style "✓ complete")
          "\n\n"
          (stat-line "Root" (:root-dir state))
          "\n"
@@ -128,11 +162,11 @@
          "\n\n"
          (charm/render title-style "  Duplicates")
          "\n"
-         (stat-line "Groups" (:duplicate-groups-count report))
+         (stat-line "Duplicate groups" (:duplicate-groups-count report))
          "\n"
-         (stat-line "Files" (:duplicate-files-count report))
+         (stat-line "Duplicate files" (:duplicate-files-count report))
          "\n"
-         (stat-line "Wasted space" (:duplicate-size-human report))
+         (stat-line "Potential savings" savings)
          "\n"
          (when (seq top-dirs)
            (str "\n"
@@ -140,8 +174,7 @@
                 "\n"
                 (apply str
                        (map (fn [[dir cnt]]
-                              (str (charm/render dim-style "  ")
-                                   (charm/render value-style (str cnt))
+                              (str "  " (charm/render value-style (format "%4d" cnt))
                                    " " (charm/render dim-style dir) "\n"))
                             top-dirs))))
          "\n"
@@ -149,24 +182,39 @@
          "\n\n"
          (charm/render dim-style "  Press q to exit"))))
 
-(defn view
+(defn- view-error
+  [state scan]
+  (str (charm/render title-style "samplanager") " "
+       (charm/render error-style "✗ error")
+       "\n\n"
+       "  " (charm/render error-style (:error scan))
+       "\n\n"
+       (charm/render dim-style "  Press q to exit")))
+
+(defn- view
   [state]
-  (case (:phase state)
-    :scanning (view-scanning state)
-    :checksumming (view-checksumming state)
-    :done (view-done state)
-    ""))
+  (let [scan @scan-state]
+    (case (:phase scan)
+      :scanning (view-scanning state scan)
+      :checksumming (view-checksumming state scan)
+      :done (view-done state scan)
+      :error (view-error state scan)
+      "")))
 
 ;; -- Public API --
 
 (defn run-tui
-  "Runs the TUI. Returns a function to send messages into the program.
-   Call the returned send-fn with maps like {:type :scan-complete ...}."
+  "Starts the TUI. Non-blocking. Use await-exit to block until user quits."
   [{:keys [root-dir output-file]}]
-  (let [send-fn (charm/run-async
-                  {:init (fn [] (init {:root-dir root-dir
-                                       :output-file output-file}))
-                   :update update-state
-                   :view view
-                   :alt-screen true})]
-    send-fn))
+  (log/info "starting TUI" {:root-dir root-dir :output-file output-file})
+  (charm/run-async
+    {:init (fn [] (init {:root-dir root-dir
+                         :output-file output-file}))
+     :update update-state
+     :view view
+     :alt-screen true}))
+
+(defn await-exit
+  "Blocks until the TUI exits (user presses q)."
+  []
+  (deref exit-promise))

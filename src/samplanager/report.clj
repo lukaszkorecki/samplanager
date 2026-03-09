@@ -4,18 +4,23 @@
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
             [clojure.string :as str]
+            [mokujin.log :as log]
             [samplanager.checksum :as checksum]))
 
 (defn group-by-size
   "Returns only file paths that share a size with at least one other file.
    Files with unique sizes cannot be duplicates, so we skip checksumming them."
   [file-paths]
-  (->> file-paths
-       (group-by #(fs/size %))
-       vals
-       (filter #(> (count %) 1))
-       (apply concat)
-       vec))
+  (log/info "grouping by size" {:file-count (count file-paths)})
+  (let [groups (group-by #(fs/size %) file-paths)
+        candidates (->> (vals groups)
+                        (filter #(> (count %) 1))
+                        (apply concat)
+                        vec)]
+    (log/info "size grouping complete" {:input (count file-paths)
+                                        :candidates (count candidates)
+                                        :skipped (- (count file-paths) (count candidates))})
+    candidates))
 
 (defn checksum-file
   "Returns a [path checksum] pair for a single file."
@@ -29,24 +34,30 @@
   ([file-paths]
    (group-by-checksum file-paths nil))
   ([file-paths progress-fn]
-   (->> file-paths
-        (pmap (fn [path]
-                (let [result (checksum-file path)]
-                  (when progress-fn (progress-fn path))
-                  result)))
-        (reduce
-         (fn [acc [path hash]]
-           (update acc hash (fnil conj []) path))
-         {}))))
+   (log/info "starting parallel checksum" {:file-count (count file-paths)})
+   (let [result (->> file-paths
+                     (pmap (fn [path]
+                             (let [result (checksum-file path)]
+                               (when progress-fn (progress-fn path))
+                               result)))
+                     (reduce
+                       (fn [acc [path hash]]
+                         (update acc hash (fnil conj []) path))
+                       {}))]
+     (log/info "checksum grouping complete" {:unique-checksums (count result)})
+     result)))
 
 (defn find-duplicates
   "Returns groups of files that share the same checksum (2+ files per group).
    Sorted by first path for deterministic output."
   [checksum-groups]
-  (->> (vals checksum-groups)
-       (filter #(> (count %) 1))
-       (sort-by first)
-       vec))
+  (let [dups (->> (vals checksum-groups)
+                  (filter #(> (count %) 1))
+                  (sort-by first)
+                  vec)]
+    (log/info "duplicates found" {:groups (count dups)
+                                  :total-files (reduce + 0 (map count dups))})
+    dups))
 
 (defn human-size
   "Formats byte count as human-readable string (KB, MB, GB)."
