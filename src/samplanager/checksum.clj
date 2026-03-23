@@ -2,7 +2,7 @@
   "Computes MD5 checksums for files using JDK MessageDigest.
    Reads files in chunks to handle large audio files without
    loading them entirely into memory."
-  (:require [mokujin.log :as log])
+  (:require [samplanager.log :as log])
   (:import [java.security MessageDigest]
            [java.io FileInputStream]))
 

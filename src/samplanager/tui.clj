@@ -3,7 +3,7 @@
    Uses a shared atom for scan progress — the view reads it on each
    spinner tick, so no custom message passing is needed."
   (:require [charm.core :as charm]
-            [mokujin.log :as log]))
+            [samplanager.log :as log]))
 
 ;; -- Styles --
 
@@ -53,7 +53,7 @@
 
 (defn scan-complete!
   [{:keys [count candidates]}]
-  (log/info "tui: scan complete" {:count count :candidates candidates})
+  (log/debug "tui: scan complete" {:count count :candidates candidates})
   (swap! scan-state assoc
          :phase :checksumming
          :scan-count count
@@ -65,7 +65,7 @@
 
 (defn done!
   [report]
-  (log/info "tui: done")
+  (log/debug "tui: done")
   (swap! scan-state assoc
          :phase :done
          :report report)
@@ -95,7 +95,7 @@
     (and (charm/key-press? msg)
          (or (charm/key-match? msg "q")
              (charm/key-match? msg "ctrl+c")))
-    (do (log/info "user quit")
+    (do (log/debug "user quit")
         (deliver exit-promise :quit)
         [state charm/quit-cmd])
 
@@ -209,7 +209,7 @@
 (defn run-tui
   "Starts the TUI. Non-blocking. Use await-exit to block until user quits."
   [{:keys [dirs output-file]}]
-  (log/info "starting TUI" {:dirs dirs :output-file output-file})
+  (log/debug "starting TUI" {:dirs dirs :output-file output-file})
   (charm/run-async
    {:init (fn [] (init {:dirs dirs
                         :output-file output-file}))

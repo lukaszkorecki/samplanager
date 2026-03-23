@@ -3,8 +3,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.tools.cli :refer [parse-opts]]
-            [mokujin.log :as log]
-            [samplanager.logging :as logging]
+            [samplanager.log :as log]
             [samplanager.scanner :as scanner]
             [samplanager.report :as report]
             [samplanager.tui :as tui])
@@ -12,6 +11,7 @@
 
 (def cli-options
   [["-o" "--output FILE" "Output JSON file (required)"]
+   ["-d" "--debug" "Write debug log to debug.log in CWD"]
    ["-h" "--help" "Show this help"]])
 
 (defn- usage
@@ -51,7 +51,8 @@
           {:exit-message (str "Error: not a directory: " (str/join ", " bad-dirs))
            :ok? false}
           {:dirs (vec arguments)
-           :output-file (:output options)})))))
+           :output-file (:output options)
+           :debug? (boolean (:debug options))})))))
 
 (defn find-duplicates
   "Scans dirs for audio files, finds duplicates by checksum.
@@ -61,7 +62,7 @@
    (find-duplicates dirs nil))
   ([dirs {:keys [scan-progress-fn scan-complete-fn
                  checksum-progress-fn]}]
-   (log/info "starting duplicate scan" {:dirs dirs})
+   (log/debug "starting duplicate scan" {:dirs dirs})
    (let [audio-files (into []
                            (mapcat #(scanner/scan-audio-files % scan-progress-fn))
                            dirs)
@@ -82,21 +83,21 @@
      ;; send final checksum count
      (when checksum-progress-fn
        (checksum-progress-fn @checksum-count))
-     (log/info "scan complete" {:found (:found-files-count report-map)
-                                :duplicates (:duplicate-files-count report-map)
-                                :groups (:duplicate-groups-count report-map)})
+     (log/debug "scan complete" {:found (:found-files-count report-map)
+                                 :duplicates (:duplicate-files-count report-map)
+                                 :groups (:duplicate-groups-count report-map)})
      {:report report-map
       :duplicates duplicates})))
 
 (defn -main
   [& args]
-  (logging/setup!)
-  (let [{:keys [dirs output-file exit-message ok?]} (validate-args args)]
+  (let [{:keys [dirs output-file debug? exit-message ok?]} (validate-args args)]
     (when exit-message
       (binding [*out* (if ok? *out* *err*)]
         (println exit-message))
       (System/exit (if ok? 0 1)))
-    (log/info "samplanager starting" {:dirs dirs :output-file output-file})
+    (when debug? (log/enable!))
+    (log/debug "samplanager starting" {:dirs dirs :output-file output-file})
     (tui/run-tui {:dirs dirs :output-file output-file})
     (future
       (try
@@ -105,13 +106,13 @@
                                {:scan-progress-fn tui/update-scan-progress!
                                 :scan-complete-fn tui/scan-complete!
                                 :checksum-progress-fn tui/update-checksum-progress!})]
-          (log/info "writing output" {:output-file output-file})
+          (log/debug "writing output" {:output-file output-file})
           (spit output-file (report/->json {:duplicates duplicates}))
-          (log/info "output written")
+          (log/debug "output written")
           (tui/done! report))
         (catch Exception e
-          (log/error e "fatal error during scan")
+          (log/error e "fatal error during scan" nil)
           (tui/error! (.getMessage e)))))
     (tui/await-exit)
-    (log/info "TUI exited, shutting down")
+    (log/debug "TUI exited, shutting down")
     (shutdown-agents)))

@@ -2,7 +2,7 @@
   "Discovers audio files in a directory tree using babashka.fs."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [mokujin.log :as log]))
+            [samplanager.log :as log]))
 
 (def audio-extensions
   "Set of supported audio file extensions (lowercase, without dot)."
@@ -21,7 +21,7 @@
   ([root-dir]
    (scan-audio-files root-dir nil))
   ([root-dir progress-fn]
-   (log/info "starting scan" {:root-dir (str root-dir)})
+   (log/debug "starting scan" {:root-dir (str root-dir)})
    (let [count* (volatile! 0)
          results (reduce
                   (fn [acc path]
@@ -36,6 +36,6 @@
                   (fs/glob root-dir "**"))]
      (when progress-fn
        (progress-fn (count results)))
-     (log/info "scan complete" {:total-files (count results)
-                                :extensions (frequencies (map #(str/lower-case (or (fs/extension %) "")) results))})
+     (log/debug "scan complete" {:total-files (count results)
+                                 :extensions (frequencies (map #(str/lower-case (or (fs/extension %) "")) results))})
      results)))

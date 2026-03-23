@@ -6,10 +6,7 @@
 
         ;; nicer TUI
         io.github.TimoKramer/charm.clj {:git/tag "v0.1.61" :git/sha "9702ff7e87974daaf18c3080b43b7809efed13c1"}
-
-        ;; logging
-        org.clojars.lukaszkorecki/mokujin {:mvn/version "1.0.0.105"}
-        org.clojars.lukaszkorecki/mokujin-logback {:mvn/version "1.0.0.105"}}
+}
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}
                                nubank/matcher-combinators {:mvn/version "3.9.1"}}

@@ -3,23 +3,22 @@
    Produces JSON reports and computes stats."
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
-            [clojure.string :as str]
-            [mokujin.log :as log]
+            [samplanager.log :as log]
             [samplanager.checksum :as checksum]))
 
 (defn group-by-size
   "Returns only file paths that share a size with at least one other file.
    Files with unique sizes cannot be duplicates, so we skip checksumming them."
   [file-paths]
-  (log/info "grouping by size" {:file-count (count file-paths)})
+  (log/debug "grouping by size" {:file-count (count file-paths)})
   (let [groups (group-by #(fs/size %) file-paths)
         candidates (->> (vals groups)
                         (filter #(> (count %) 1))
                         (apply concat)
                         vec)]
-    (log/info "size grouping complete" {:input (count file-paths)
-                                        :candidates (count candidates)
-                                        :skipped (- (count file-paths) (count candidates))})
+    (log/debug "size grouping complete" {:input (count file-paths)
+                                         :candidates (count candidates)
+                                         :skipped (- (count file-paths) (count candidates))})
     candidates))
 
 (defn checksum-file
@@ -34,7 +33,7 @@
   ([file-paths]
    (group-by-checksum file-paths nil))
   ([file-paths progress-fn]
-   (log/info "starting parallel checksum" {:file-count (count file-paths)})
+   (log/debug "starting parallel checksum" {:file-count (count file-paths)})
    (let [result (->> file-paths
                      (pmap (fn [path]
                              (let [result (checksum-file path)]
@@ -44,7 +43,7 @@
                       (fn [acc [path hash]]
                         (update acc hash (fnil conj []) path))
                       {}))]
-     (log/info "checksum grouping complete" {:unique-checksums (count result)})
+     (log/debug "checksum grouping complete" {:unique-checksums (count result)})
      result)))
 
 (defn find-duplicates
@@ -55,8 +54,8 @@
                   (filter #(> (count %) 1))
                   (sort-by first)
                   vec)]
-    (log/info "duplicates found" {:groups (count dups)
-                                  :total-files (reduce + 0 (map count dups))})
+    (log/debug "duplicates found" {:groups (count dups)
+                                   :total-files (reduce + 0 (map count dups))})
     dups))
 
 (defn human-size
