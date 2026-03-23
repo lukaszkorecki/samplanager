@@ -41,9 +41,9 @@
                                (when progress-fn (progress-fn path))
                                result)))
                      (reduce
-                       (fn [acc [path hash]]
-                         (update acc hash (fnil conj []) path))
-                       {}))]
+                      (fn [acc [path hash]]
+                        (update acc hash (fnil conj []) path))
+                      {}))]
      (log/info "checksum grouping complete" {:unique-checksums (count result)})
      result)))
 

@@ -1,7 +1,6 @@
 (ns samplanager.core-test
   (:require [clojure.test :refer [deftest testing is]]
             [matcher-combinators.test :refer [match?]]
-            [cheshire.core :as json]
             [samplanager.core :as core]
             [babashka.fs :as fs]))
 
@@ -32,7 +31,7 @@
 (deftest find-duplicates-test
   (testing "end-to-end: detects duplicates across subdirectories"
     (let [root (create-sample-library!)
-          {:keys [report duplicates]} (core/find-duplicates root)]
+          {:keys [report duplicates]} (core/find-duplicates [root])]
       (is (match? {:found-files-count 7
                    :duplicate-files-count 5
                    :duplicate-groups-count 2
@@ -51,7 +50,7 @@
     (let [root (str (fs/create-temp-dir {:prefix "no-dups-test"}))]
       (spit (str root "/kick.wav") "unique-kick")
       (spit (str root "/snare.wav") "unique-snare-data")
-      (let [{:keys [report duplicates]} (core/find-duplicates root)]
+      (let [{:keys [report duplicates]} (core/find-duplicates [root])]
         (is (match? {:found-files-count 2
                      :duplicate-files-count 0
                      :duplicate-groups-count 0
@@ -59,4 +58,23 @@
                      :duplicate-size zero?}
                     report))
         (is (= [] duplicates)))
-      (fs/delete-tree root))))
+      (fs/delete-tree root)))
+
+  (testing "multi-dir: finds duplicates across separate root directories"
+    (let [dir-a (str (fs/create-temp-dir {:prefix "multi-a"}))
+          dir-b (str (fs/create-temp-dir {:prefix "multi-b"}))]
+      ;; Same file content in two separate roots
+      (spit (str dir-a "/kick.wav") "shared-kick-data")
+      (spit (str dir-b "/kick-copy.wav") "shared-kick-data")
+      ;; Unique file in each
+      (spit (str dir-a "/snare.wav") "unique-snare-aaa")
+      (spit (str dir-b "/hat.wav") "unique-hat-bbb!!!")
+      (let [{:keys [report duplicates]} (core/find-duplicates [dir-a dir-b])]
+        (is (match? {:found-files-count 4
+                     :duplicate-files-count 2
+                     :duplicate-groups-count 1}
+                    report))
+        (is (= 1 (count duplicates)))
+        (is (= 2 (count (first duplicates)))))
+      (fs/delete-tree dir-a)
+      (fs/delete-tree dir-b))))

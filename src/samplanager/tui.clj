@@ -80,9 +80,9 @@
 ;; -- Charm program (only handles spinner + quit) --
 
 (defn- init
-  [{:keys [root-dir output-file]}]
+  [{:keys [dirs output-file]}]
   (let [[spinner spinner-cmd] (charm/spinner-init (charm/spinner :dots))]
-    [{:root-dir root-dir
+    [{:dirs dirs
       :output-file output-file
       :spinner spinner}
      spinner-cmd]))
@@ -126,7 +126,10 @@
   (str (charm/render title-style "samplanager")
        "\n\n"
        "  " (charm/spinner-view (:spinner state))
-       " Scanning " (charm/render value-style (:root-dir state)) " for audio files...\n"
+       " Scanning " (charm/render value-style
+                                  (str (count (:dirs state)) " director"
+                                       (if (= 1 (count (:dirs state))) "y" "ies")))
+       " for audio files...\n"
        "\n"
        (stat-line "Audio files found" (:scan-count scan))
        "\n"))
@@ -154,7 +157,7 @@
     (str (charm/render title-style "samplanager") " "
          (charm/render ok-style "✓ complete")
          "\n\n"
-         (stat-line "Root" (:root-dir state))
+         (apply str (map (fn [d] (str (stat-line "Root" d) "\n")) (:dirs state)))
          "\n"
          (stat-line "Audio files" (:found-files-count report))
          "\n"
@@ -183,7 +186,7 @@
          (charm/render dim-style "  Press q to exit"))))
 
 (defn- view-error
-  [state scan]
+  [_state scan]
   (str (charm/render title-style "samplanager") " "
        (charm/render error-style "✗ error")
        "\n\n"
@@ -205,14 +208,14 @@
 
 (defn run-tui
   "Starts the TUI. Non-blocking. Use await-exit to block until user quits."
-  [{:keys [root-dir output-file]}]
-  (log/info "starting TUI" {:root-dir root-dir :output-file output-file})
+  [{:keys [dirs output-file]}]
+  (log/info "starting TUI" {:dirs dirs :output-file output-file})
   (charm/run-async
-    {:init (fn [] (init {:root-dir root-dir
-                         :output-file output-file}))
-     :update update-state
-     :view view
-     :alt-screen true}))
+   {:init (fn [] (init {:dirs dirs
+                        :output-file output-file}))
+    :update update-state
+    :view view
+    :alt-screen true}))
 
 (defn await-exit
   "Blocks until the TUI exits (user presses q)."

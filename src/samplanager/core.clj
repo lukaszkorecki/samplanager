@@ -1,6 +1,8 @@
 (ns samplanager.core
   "CLI entry point for samplanager - finds duplicate audio samples."
   (:require [babashka.fs :as fs]
+            [clojure.string :as str]
+            [clojure.tools.cli :refer [parse-opts]]
             [mokujin.log :as log]
             [samplanager.logging :as logging]
             [samplanager.scanner :as scanner]
@@ -8,29 +10,73 @@
             [samplanager.tui :as tui])
   (:gen-class))
 
+(def cli-options
+  [["-o" "--output FILE" "Output JSON file (required)"]
+   ["-h" "--help" "Show this help"]])
+
+(defn- usage
+  [summary]
+  (str/join \newline
+            ["samplanager — find duplicate audio samples"
+             ""
+             "Usage: samplanager [options] <dir> [dir ...]"
+             ""
+             "Options:"
+             summary
+             ""
+             "Scans one or more directories for duplicate audio files"
+             "and writes the duplicate list to the output file as JSON."]))
+
+(defn- validate-args
+  "Parses and validates CLI args. Returns either
+   {:dirs [...] :output-file \"...\"} or {:exit-message \"...\" :ok? bool}."
+  [args]
+  (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)]
+    (cond
+      (:help options)
+      {:exit-message (usage summary) :ok? true}
+
+      errors
+      {:exit-message (str/join \newline errors) :ok? false}
+
+      (nil? (:output options))
+      {:exit-message "Error: --output is required" :ok? false}
+
+      (empty? arguments)
+      {:exit-message "Error: at least one directory is required" :ok? false}
+
+      :else
+      (let [bad-dirs (remove #(fs/directory? %) arguments)]
+        (if (seq bad-dirs)
+          {:exit-message (str "Error: not a directory: " (str/join ", " bad-dirs))
+           :ok? false}
+          {:dirs (vec arguments)
+           :output-file (:output options)})))))
+
 (defn find-duplicates
-  "Scans root-dir for audio files, finds duplicates by checksum.
+  "Scans dirs for audio files, finds duplicates by checksum.
+   dirs is a vector of directory paths.
    Returns {:report counts-map, :duplicates [[path ...] ...]}."
-  ([root-dir]
-   (find-duplicates root-dir nil))
-  ([root-dir {:keys [scan-progress-fn scan-complete-fn
-                     checksum-progress-fn]}]
-   (log/info "starting duplicate scan" {:root-dir root-dir})
-   (let [audio-files (scanner/scan-audio-files
-                       root-dir
-                       scan-progress-fn)
+  ([dirs]
+   (find-duplicates dirs nil))
+  ([dirs {:keys [scan-progress-fn scan-complete-fn
+                 checksum-progress-fn]}]
+   (log/info "starting duplicate scan" {:dirs dirs})
+   (let [audio-files (into []
+                           (mapcat #(scanner/scan-audio-files % scan-progress-fn))
+                           dirs)
          candidates (report/group-by-size audio-files)
          _ (when scan-complete-fn
              (scan-complete-fn {:count (count audio-files)
                                 :candidates (count candidates)}))
          checksum-count (atom 0)
          checksum-groups (report/group-by-checksum
-                           candidates
-                           (when checksum-progress-fn
-                             (fn [_path]
-                               (let [n (swap! checksum-count inc)]
-                                 (when (zero? (mod n 10))
-                                   (checksum-progress-fn n))))))
+                          candidates
+                          (when checksum-progress-fn
+                            (fn [_path]
+                              (let [n (swap! checksum-count inc)]
+                                (when (zero? (mod n 10))
+                                  (checksum-progress-fn n))))))
          duplicates (report/find-duplicates checksum-groups)
          report-map (report/build-report audio-files duplicates)]
      ;; send final checksum count
@@ -45,19 +91,17 @@
 (defn -main
   [& args]
   (logging/setup!)
-  (let [root-dir (first args)
-        output-file (second args)]
-    (when (or (nil? root-dir) (nil? output-file) (not (fs/directory? root-dir)))
-      (binding [*out* *err*]
-        (println "Usage: samplanager <root-directory> <output-file>")
-        (println "  Scans for duplicate audio files and writes the list to output-file."))
-      (System/exit 1))
-    (log/info "samplanager starting" {:root-dir root-dir :output-file output-file})
-    (tui/run-tui {:root-dir root-dir :output-file output-file})
+  (let [{:keys [dirs output-file exit-message ok?]} (validate-args args)]
+    (when exit-message
+      (binding [*out* (if ok? *out* *err*)]
+        (println exit-message))
+      (System/exit (if ok? 0 1)))
+    (log/info "samplanager starting" {:dirs dirs :output-file output-file})
+    (tui/run-tui {:dirs dirs :output-file output-file})
     (future
       (try
         (let [{:keys [report duplicates]}
-              (find-duplicates root-dir
+              (find-duplicates dirs
                                {:scan-progress-fn tui/update-scan-progress!
                                 :scan-complete-fn tui/scan-complete!
                                 :checksum-progress-fn tui/update-checksum-progress!})]

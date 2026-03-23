@@ -24,16 +24,16 @@
    (log/info "starting scan" {:root-dir (str root-dir)})
    (let [count* (volatile! 0)
          results (reduce
-                   (fn [acc path]
-                     (if (and (fs/regular-file? path) (audio-file? path))
-                       (let [s (str path)
-                             n (vswap! count* inc)]
-                         (when (and progress-fn (zero? (mod n 50)))
-                           (progress-fn n))
-                         (conj acc s))
-                       acc))
-                   []
-                   (fs/glob root-dir "**"))]
+                  (fn [acc path]
+                    (if (and (fs/regular-file? path) (audio-file? path))
+                      (let [s (str path)
+                            n (vswap! count* inc)]
+                        (when (and progress-fn (zero? (mod n 50)))
+                          (progress-fn n))
+                        (conj acc s))
+                      acc))
+                  []
+                  (fs/glob root-dir "**"))]
      (when progress-fn
        (progress-fn (count results)))
      (log/info "scan complete" {:total-files (count results)
