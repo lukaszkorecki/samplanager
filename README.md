@@ -44,6 +44,9 @@ samplanager
 
 ```
 bb uberjar app.jar -m samplanager.core
+# or if you're using mise:
+
+mise run build
 ```
 
 - use it:

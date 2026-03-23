@@ -3,13 +3,14 @@ java = "temurin-25"
 clojure = "latest"
 babashka = "latest"
 
-
 [tasks.test]
 run = "clojure -M:test"
 
 [tasks.fmt]
 run = "clojure-lsp format"
 
-
 [tasks.run]
 run = "clojure -M:run -m samplanger.core"
+
+[tasks.build]
+run = "bb uberjar app.jar -m samplanager.core"
