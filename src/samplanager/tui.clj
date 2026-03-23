@@ -68,14 +68,16 @@
   (log/info "tui: done")
   (swap! scan-state assoc
          :phase :done
-         :report report))
+         :report report)
+  (deliver exit-promise :done))
 
 (defn error!
   [message]
   (log/error "tui: error" {:message message})
   (swap! scan-state assoc
          :phase :error
-         :error message))
+         :error message)
+  (deliver exit-promise :error))
 
 ;; -- Charm program (only handles spinner + quit) --
 
@@ -182,8 +184,7 @@
                             top-dirs))))
          "\n"
          (stat-line "Output written to" (:output-file state))
-         "\n\n"
-         (charm/render dim-style "  Press q to exit"))))
+         "\n")))
 
 (defn- view-error
   [_state scan]
@@ -191,8 +192,7 @@
        (charm/render error-style "✗ error")
        "\n\n"
        "  " (charm/render error-style (:error scan))
-       "\n\n"
-       (charm/render dim-style "  Press q to exit")))
+       "\n"))
 
 (defn- view
   [state]
