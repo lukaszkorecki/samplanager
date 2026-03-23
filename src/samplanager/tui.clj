@@ -221,3 +221,32 @@
   "Blocks until the TUI exits (user presses q)."
   []
   (deref exit-promise))
+
+(defn print-summary
+  "Prints a plain-text summary to stdout after charm has exited alt-screen."
+  []
+  (let [{:keys [phase report error]} @scan-state]
+    (case phase
+      :done
+      (let [dirs (:dirs-by-duplicates report)
+            top-dirs (take 5 dirs)]
+        (println "samplanager ✓ complete")
+        (println)
+        (println "  Audio files:" (:found-files-count report))
+        (println "  Total size:" (:total-size-human report))
+        (println)
+        (println "  Duplicate groups:" (:duplicate-groups-count report))
+        (println "  Duplicate files:" (:duplicate-files-count report))
+        (println "  Potential savings:" (:duplicate-size-human report))
+        (when (seq top-dirs)
+          (println)
+          (println "  Top directories by duplicates:")
+          (doseq [[dir cnt] top-dirs]
+            (println (format "  %4d %s" cnt dir)))))
+
+      :error
+      (binding [*out* *err*]
+        (println "samplanager ✗ error")
+        (println " " error))
+
+      nil)))

@@ -114,5 +114,6 @@
           (log/error e "fatal error during scan" nil)
           (tui/error! (.getMessage e)))))
     (tui/await-exit)
+    (tui/print-summary)
     (log/debug "TUI exited, shutting down")
     (shutdown-agents)))
